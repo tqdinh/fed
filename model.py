@@ -1,10 +1,11 @@
 from multiprocessing.context import Process
+from typing import ByteString
 from numpy.lib.function_base import gradient
 from layer import *
 from inout import plot_sample, plot_learning_curve, plot_accuracy_curve, plot_histogram
 import numpy as np
 import time
-
+from federated_config import *
 
 from read_write_file import *
 from inout import load_mnist, load_cifar, preprocess
@@ -55,8 +56,8 @@ class Network(Process):
         
         dataset = load_mnist() if dataset_name == 'mnist' else load_cifar()
         dataset = preprocess(dataset)
-        random_sample_splited=np.random.randint(1,10,dtype=int)
-        #random_sample_splited=1000
+        #random_sample_splited=np.random.randint(1,10,dtype=int)
+        random_sample_splited=10000
         
         train_images=dataset['train_images']
         train_lables=dataset['train_labels']
@@ -156,14 +157,9 @@ class Network(Process):
         
         plotting=[]
         plotting_accuracy=[]
-        batch_size=101
+        batch_size=B
         local_accuracy=[]
         local_loss=[]
-
-        is_show_debug_info=False
-        
-        
-        
         t1=time.time()
         
         history = {'loss': [], 'accuracy': [], 'val_loss': [], 'val_accuracy': []}
@@ -205,28 +201,21 @@ class Network(Process):
                 for i ,(image,label) in enumerate(zip(train_images,train_labels)):
                     count=count+1
                    # print(i)
-                    if i % 100 == 99:
+                    if i % B == B-1:
                         #print("{0}/{1} {2}".format(count,train_size,100*(count/train_size)))
                         executed_time=time.time()-initial_time
                         initial_time= time.time()
                         local_accuracy.append(num_correct)    
-                        print('[Step %d] Past 100 steps Time [%.fs]: Average Loss %.3f | Accuracy: %d%%' %(count + 1,executed_time, loss / 100, num_correct))
+                        #print("[Step {0}] Past 100 steps Time [{1}s]: Average Loss {2} | Accuracy: {3}".format(count + 1,executed_time, loss / B),float(num_correct)/B*100)
+                        print('[Step %d] Past 100 steps Time [%.fs]: Average Loss %.3f | Accuracy: %d%%' %(count + 1,executed_time, loss / batch_size, num_correct/batch_size*100))
                         loss = 0
                         num_correct = 0
 
                         history['loss'].append(loss)                # update history
-                        history['accuracy'].append(num_correct/100)
-                        
-
-                        start_update_time=time.time()-initial_time
-                        
-                    
-
-
-                        end_update_time=time.time()-initial_time                        
-
+                        history['accuracy'].append(float(num_correct)/B)
+            
                     #image=np.pad(image, ((0,0),(2,2),(2,2)),constant_values=0)
-                    t3=time.time()
+                   
                     tmp_output = self.forward(image, plot_feature_maps=0)       # forward propagation
                    
                     l = -np.log(tmp_output[label])
@@ -244,21 +233,6 @@ class Network(Process):
                         [2 * regularization * np.sum(np.absolute(layer.get_weights())) for layer in self.layers])
 
                     learning_rate = lr_schedule(learning_rate, iteration=i) 
-                    # gradient = np.zeros(10)
-                    # gradient[label] = -1 / tmp_output[label]
-                    
-                    #gradient = np.zeros(10)
-                                                        # compute initial gradient
-                    # gradient[label] = -1 / tmp_output[label] + np.sum(
-                    #     [2 * regularization * np.sum(np.absolute(layer.get_weights())) for layer in self.layers])
-
-                    #learning_rate = lr_schedule(learning_rate, iteration=i)     # learning rate decay
-                
-                    #learning_rate=learning_rate * np.exp(-0.1*i)
-
-                    #learning_rate=lr_schedule_step_base(learning_rate,i,epoch)
-
-                    #learning_rate=learning_rate * (0.75 ** np.floor(epoch/10))
 
                     t4=time.time()
                     self.backward(gradient, learning_rate)                      # backward propagation
