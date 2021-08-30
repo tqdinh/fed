@@ -1,5 +1,5 @@
 from multiprocessing.context import Process
-from typing import ByteString
+from typing import Any, ByteString
 from numpy.lib.function_base import gradient
 from layer import *
 from inout import plot_sample, plot_learning_curve, plot_accuracy_curve, plot_histogram
@@ -13,67 +13,18 @@ dataset_name = 'mnist'
  
 
 class Network(Process):
-    def __init__(self,_thread_index,
-    _data_set,
-        _learning_rate,_validate,_regularization,
-        _plot_weights,_verbose) :
+    def __init__(self,_learning_rate,_train_data,_regularization) :
+        self.learning_rate=_learning_rate
+        self.train_data=_train_data
+        self.regularization=_regularization
         Process.__init__(self)  # Call the parent class initialization method
         self.layers=[]
-        self.thread_index=_thread_index
-        self.data_set=_data_set
-        # dataset = load_mnist() if dataset_name == 'mnist' else load_cifar()
-        # dataset = preprocess(dataset)
-        random_sample_splited=np.random.randint(1,10,dtype=int)
-        
-        
-        train_images=self.data_set['train_images']
-        train_lables=self.data_set['train_labels']
-
-
-        trains_images_array=np.array_split(train_images,random_sample_splited)
-        trains_lables_array=np.array_split(train_lables,random_sample_splited)
-        trains={'train_images':trains_images_array[0], 'train_labels':trains_lables_array[0]}
-
-        self.trains=trains
-
-        
-        
-        self.learning_rate=_learning_rate
-        self.validate=_validate
-        self.regularization=_regularization
-        self.plot_weights=_plot_weights
-        self.verbose=_verbose
-        
-        
-        self.plot_val=[]
-    
-    def __init__(self,
-        _learning_rate,_validate,_regularization,
-        _plot_weights,_verbose) :
-        Process.__init__(self)  # Call the parent class initialization method
-        self.layers=[]
-        
-        self.learning_rate=_learning_rate
-        self.validate=_validate
-        self.regularization=_regularization
-        self.plot_weights=_plot_weights
-        self.verbose=_verbose
-        
-        
-        self.plot_val=[]
-    
-
+        self.trains=Any
+    def set_training_set(self,_trains):
+        self.trains=_trains
 
     def run(self):    
-        #self.build_model("mnist")
-        self.train(
-            self.trains,
-            1,
-            self.learning_rate,
-            self.validate,
-            self.regularization,
-            self.plot_weights,
-            self.verbose)
+        self.train(NUMBER_OF_EPOCH,self.learning_rate,self.regularization)
         
     def add_layer(self,layer):
         self.layers.append(layer)
@@ -85,8 +36,6 @@ class Network(Process):
             self.add_layer(Convolutional(name='conv1', num_filters=8, stride=2, size=3, activation='relu'))
             self.add_layer(Convolutional(name='conv2', num_filters=8, stride=2, size=3, activation='relu'))
             self.add_layer(Dense(name='dense', nodes=8 * 6 * 6, num_classes=10))
-
-           
             # total_weights=0
             # for i in range(len(self.layers)):
             #     total_weights+=len(self.layers[i].get_weights())
@@ -100,13 +49,14 @@ class Network(Process):
             self.add_layer(Pooling(name='pool2', stride=2, size=2))
             self.add_layer(FullyConnected(name='fullyconnected', nodes1=64 * 5 * 5, nodes2=256, activation='relu'))
             self.add_layer(Dense(name='dense', nodes=256, num_classes=10))
-    def forward(self,image,plot_feature_maps):
-        global history
+    
+    def forward(self,image):
+
         for layer in self.layers:
             image=layer.forward(image)
         return image
+    
     def backward(self,gradient,learning_rate):
-        
         for layer in reversed(self.layers):
             gradient=layer.backward(gradient,learning_rate)
 
@@ -121,10 +71,8 @@ class Network(Process):
             start_index=end_index
             self.layers[i].set_weights(_weights)
         
-    def train(self,
-                dataset,num_epochs,learning_rate,validate,regularization,plot_weights,verbose):    
+    def train(self,num_epochs,learning_rate,regularization):    
         batch_size=B
-       
         images_train=self.trains["train_images"]
         labels_train=self.trains["train_labels"]
         train_size=images_train.shape[0]
@@ -139,50 +87,47 @@ class Network(Process):
         
             train_images_array=np.array_split(images_train,num_of_batch)
             train_labels_array=np.array_split(labels_train,num_of_batch)
-                
+            
+            tmp_loss,num_corr=0,0
+            initial_time = time.time()
+
             for b in range(len(train_images_array)):
                 train_images=train_images_array[b]
                 train_labels=train_labels_array[b]
 
-                loss = 0
-                num_correct = 0
-                initial_time = time.time()
+                
+                
                 for i ,(image,label) in enumerate(zip(train_images,train_labels)):
                     count=count+1
-                   # print(i)
-                    if i % B == B-1:
-                        #print("{0}/{1} {2}".format(count,train_size,100*(count/train_size)))
+                    
+                    if i % batch_size == 0:
                         executed_time=time.time()-initial_time
                         initial_time= time.time()
-                        
-                        #print("[Step {0}] Past 100 steps Time [{1}s]: Average Loss {2} | Accuracy: {3}".format(count + 1,executed_time, loss / B),float(num_correct)/B*100)
-                        print('[Step %d] Past 100 steps Time [%.fs]: Average Loss %.3f | Accuracy: %d%%' %(count + 1,executed_time, loss / batch_size, num_correct/batch_size*100))
-                        loss = 0
-                        num_correct = 0
 
+                        accuracy = (num_corr / (count + 1)) * 100       # compute training accuracy and loss up to iteration i
+                        loss = tmp_loss / (count + 1)
+
+
+                        print('[Step %d] Past %d steps Time [%.fs]: Average Loss %.3f | Accuracy: %.4f' %(count + 1,batch_size,executed_time, loss , accuracy))
+                        
                         
                     
-                   
-                    tmp_output = self.forward(image, plot_feature_maps=0)       # forward propagation
-                   
-                    l = -np.log(tmp_output[label])
-                    acc = 1 if np.argmax(tmp_output) == label else 0
+                    tmp_output = self.forward(image)       # forward propagation
+
                     # compute (regularized) cross-entropy and update loss
-                    #tmp_loss += regularized_cross_entropy(self.layers, regularization, tmp_output[label])
-                    
-                    loss += l
-                    num_correct += acc
+                    tmp_loss += regularized_cross_entropy(self.layers, regularization, tmp_output[label])
 
-
+                    if np.argmax(tmp_output) == label:                          # update accuracy
+                        num_corr += 1
 
                     gradient = np.zeros(10)                                     # compute initial gradient
                     gradient[label] = -1 / tmp_output[label] + np.sum(
                         [2 * regularization * np.sum(np.absolute(layer.get_weights())) for layer in self.layers])
 
-                    learning_rate = lr_schedule(learning_rate, iteration=i) 
+                    learning_rate = lr_schedule(learning_rate, iteration=i)     # learning rate decay
 
                     self.backward(gradient, learning_rate)                      # backward propagation
-                    
+
         
     
     def get_plot_val(self):
@@ -191,7 +136,7 @@ class Network(Process):
     def evaluate(self,X,y,regularization,plot_correct,plot_missclassified,plot_feature_maps,verbose):
         loss,num_correct=0,0
         for i in range(len(X)):
-            tmp_output=self.forward(X[i],plot_feature_maps)
+            tmp_output=self.forward(X[i])
             
             loss+=regularized_cross_entropy(self.layers,regularization,tmp_output[y[i]])
 
